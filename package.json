@@ -1,0 +1,39 @@
+{
+  "name": "openbullet2-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for OpenBullet 2 - automate web scraping, penetration testing, and data analysis through AI IDEs",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "openbullet2-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc && node -e \"require('fs').chmodSync('dist/index.js', '755')\"",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "openbullet",
+    "openbullet2",
+    "mcp",
+    "model-context-protocol",
+    "automation",
+    "scraping",
+    "pentesting"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
