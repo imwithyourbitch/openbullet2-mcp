@@ -33,7 +33,7 @@ export function registerGuestTools(client: OB2Client) {
   });
 
   server.registerTool('ob2_update_guest', {
-    description: 'Update a guest user info (username, expiration, allowed IPs). Admin only.',
+    description: 'Update a guest user info (username, expiration, allowed IPs). Admin only. Only the fields you supply are changed; the rest are preserved by fetching the current guest first.',
     inputSchema: {
       id: z.number().describe('Guest ID'),
       username: z.string().optional().describe('New username'),
@@ -41,11 +41,14 @@ export function registerGuestTools(client: OB2Client) {
       allowedAddresses: z.string().optional().describe('JSON array of allowed IPs'),
     },
   }, async (args) => {
+    const current = await client.get<{ username?: string; accessExpiration?: string; allowedAddresses?: string[] }>('/guest', { query: { id: args.id } });
     const guest = await client.patch('/guest/info', {
       id: args.id,
-      username: args.username || '',
-      accessExpiration: args.accessExpiration || '',
-      allowedAddresses: args.allowedAddresses ? JSON.parse(args.allowedAddresses) : [],
+      username: args.username ?? current.username ?? '',
+      accessExpiration: args.accessExpiration ?? current.accessExpiration ?? '',
+      allowedAddresses: args.allowedAddresses !== undefined
+        ? JSON.parse(args.allowedAddresses)
+        : (current.allowedAddresses ?? []),
     });
     return { content: [{ type: 'text', text: `Guest updated: ${JSON.stringify(guest, null, 2)}` }] };
   });
