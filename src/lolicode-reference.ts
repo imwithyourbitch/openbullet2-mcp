@@ -95,21 +95,49 @@ myDict = {("key1", "value1"), ("key2", "value2")}
 BLOCK:HttpRequest
   url = "https://example.com/api/login"
   method = POST
-  type = STANDARD
   customHeaders = {("Content-Type", "application/json"), ("User-Agent", "Mozilla/5.0")}
   customCookies = {("session", "abc123")}
-  stringContent = $"{\\"username\\":\\"<input.USER>\\",\\"password\\":\\"<input.PASS>\\"}"
-  contentType = "application/json"
+  TYPE:STANDARD
+  $"{\\"username\\":\\"<input.USER>\\",\\"password\\":\\"<input.PASS>\\"}"
+  "application/json"
 ENDBLOCK
 \`\`\`
 
 HTTP Methods: \`GET\`, \`POST\`, \`PUT\`, \`PATCH\`, \`DELETE\`, \`HEAD\`, \`OPTIONS\`
 
-Content types for POST/PUT:
-- \`type = STANDARD\` — Standard string body (use \`stringContent\` and \`contentType\`)
-- \`type = MULTIPART\` — Multipart form data
-- \`type = BASICAUTH\` — Basic authentication
-- \`type = RAW\` — Raw bytes
+Request body type is selected with a \`TYPE:\` directive on its own line inside the block,
+followed by the body parameters as positional values (one per line):
+
+- \`TYPE:STANDARD\` — body content + content-type:
+  \`\`\`
+  TYPE:STANDARD
+  $"body string"
+  "application/json"
+  \`\`\`
+- \`TYPE:MULTIPART\` — boundary + per-field \`CONTENT:\` lines:
+  \`\`\`
+  TYPE:MULTIPART
+  ""                                          // boundary, "" = auto
+  CONTENT:STRING "name" "value" "text/plain"
+  CONTENT:RAW    "name" base64Bytes "application/octet-stream"
+  CONTENT:FILE   "name" "path/to/file" "application/octet-stream"
+  \`\`\`
+- \`TYPE:BASICAUTH\` — username + password:
+  \`\`\`
+  TYPE:BASICAUTH
+  "user"
+  "pass"
+  \`\`\`
+- \`TYPE:RAW\` — raw bytes (base64) + content-type:
+  \`\`\`
+  TYPE:RAW
+  base64Bytes
+  "application/octet-stream"
+  \`\`\`
+
+NOTE: \`type = STANDARD\` (as a regular setting line) is **not** valid LoliCode and will
+produce a parse error in current OB2 versions. Always use the \`TYPE:\` directive form above.
+Call \`ob2_get_block_snippets\` to inspect the exact snippet your OB2 instance accepts.
 
 After an HttpRequest, these auto-variables are set:
 - \`data.SOURCE\` — Response body as string
@@ -131,12 +159,12 @@ BLOCK:Parse
 ENDBLOCK
 \`\`\`
 
-Parse modes (use MODE: prefix on its own line):
+Parse modes (use MODE: prefix on its own line — **case is significant**; abbreviations are uppercase, full words are PascalCase):
 - \`MODE:LR\` — Left/Right: uses \`leftDelim\` and \`rightDelim\`. Without RECURSIVE, captures from FIRST prefix to LAST suffix.
 - \`MODE:CSS\` — CSS selector: uses \`cssSelector\`. Captures FIRST match only.
-- \`MODE:JSON\` — JSON path: uses \`jToken\`
-- \`MODE:REGEX\` — Regex: uses \`pattern\` and \`outputFormat\`
-- \`MODE:XPATH\` — XPath: uses \`xPath\`
+- \`MODE:Json\` — JSON path: uses \`jToken\`
+- \`MODE:Regex\` — Regex: uses \`pattern\` and \`outputFormat\`
+- \`MODE:XPath\` — XPath: uses \`xPath\`
 
 **RECURSIVE modifier for LR mode:**
 Add \`RECURSIVE\` on its own line to capture ALL matches (not just first/last):
@@ -190,7 +218,7 @@ BLOCK:Parse
   input = @data.SOURCE
   pattern = "token\\":\\"([a-zA-Z0-9]+)\\""
   outputFormat = "$1"
-  MODE:REGEX
+  MODE:Regex
   => CAP @token
 ENDBLOCK
 \`\`\`
@@ -205,10 +233,10 @@ BLOCK:Keycheck
     STRINGKEY @data.SOURCE Contains "Invalid"
     STRINGKEY @data.SOURCE Contains "incorrect"
   KEYCHAIN RETRY OR
-    INTKEY @data.STATUS Is 429
+    INTKEY @data.RESPONSECODE EqualTo 429
     STRINGKEY @data.SOURCE Contains "rate limit"
   KEYCHAIN BAN OR
-    INTKEY @data.STATUS Is 403
+    INTKEY @data.RESPONSECODE EqualTo 403
 ENDBLOCK
 \`\`\`
 
@@ -229,7 +257,8 @@ KEY condition types:
 - \`STRINGKEY @variable EqualTo "text"\`
 - \`STRINGKEY @variable Exists\`
 - \`STRINGKEY @variable MatchesRegex "pattern"\`
-- \`INTKEY @data.STATUS Is 429\` (verified working for status codes)
+- \`INTKEY @data.RESPONSECODE EqualTo 429\` (verified working for status codes — use \`EqualTo\`, not \`Is\`)
+- \`BOOLKEY @variable Is True\` / \`Is False\`
 
 **UNSUPPORTED/ERROR-prone:**
 - \`NotContains\` - may not work, use Contains with FAIL keychain instead

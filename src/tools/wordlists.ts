@@ -33,7 +33,7 @@ export function registerWordlistTools(client: OB2Client) {
   });
 
   server.registerTool('ob2_update_wordlist', {
-    description: 'Update wordlist info (name, purpose, type).',
+    description: 'Update wordlist info (name, purpose, type). Only the fields you supply are changed; the rest are preserved by fetching the current wordlist first.',
     inputSchema: {
       id: z.number().describe('Wordlist ID'),
       name: z.string().optional().describe('New name'),
@@ -41,7 +41,13 @@ export function registerWordlistTools(client: OB2Client) {
       wordlistType: z.string().optional().describe('New wordlist type'),
     },
   }, async (args) => {
-    const wordlist = await client.patch('/wordlist/info', { id: args.id, name: args.name || '', purpose: args.purpose || '', wordlistType: args.wordlistType || '' });
+    const current = await client.get<{ name?: string; purpose?: string; wordlistType?: string }>('/wordlist', { query: { id: args.id } });
+    const wordlist = await client.patch('/wordlist/info', {
+      id: args.id,
+      name: args.name ?? current.name ?? '',
+      purpose: args.purpose ?? current.purpose ?? '',
+      wordlistType: args.wordlistType ?? current.wordlistType ?? '',
+    });
     return { content: [{ type: 'text', text: `Wordlist updated: ${JSON.stringify(wordlist, null, 2)}` }] };
   });
 

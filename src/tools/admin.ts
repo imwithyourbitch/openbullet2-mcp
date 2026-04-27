@@ -77,7 +77,7 @@ export function registerAdminTools(client: OB2Client) {
   });
 
   server.registerTool('ob2_update_triggered_action', {
-    description: 'Update an existing triggered action. Admin only.',
+    description: 'Update an existing triggered action. Admin only. Only the fields you supply are changed; the rest are preserved by fetching the current action first.',
     inputSchema: {
       id: z.string().describe('Triggered action ID'),
       name: z.string().optional().describe('New name'),
@@ -88,9 +88,15 @@ export function registerAdminTools(client: OB2Client) {
       actions: z.string().optional().describe('JSON array of actions'),
     },
   }, async (args) => {
+    const current = await client.get<{ name?: string; isActive?: boolean; isRepeatable?: boolean; jobId?: number; triggers?: unknown[]; actions?: unknown[] }>('/job-monitor/triggered-action', { query: { id: args.id } });
     const action = await client.put('/job-monitor/triggered-action', {
-      id: args.id, name: args.name || '', isActive: args.isActive ?? true, isRepeatable: args.isRepeatable ?? false,
-      jobId: args.jobId ?? 0, triggers: args.triggers ? JSON.parse(args.triggers) : [], actions: args.actions ? JSON.parse(args.actions) : [],
+      id: args.id,
+      name: args.name ?? current.name ?? '',
+      isActive: args.isActive ?? current.isActive ?? true,
+      isRepeatable: args.isRepeatable ?? current.isRepeatable ?? false,
+      jobId: args.jobId ?? current.jobId ?? 0,
+      triggers: args.triggers !== undefined ? JSON.parse(args.triggers) : (current.triggers ?? []),
+      actions: args.actions !== undefined ? JSON.parse(args.actions) : (current.actions ?? []),
     });
     return { content: [{ type: 'text', text: `Triggered action updated: ${JSON.stringify(action, null, 2)}` }] };
   });

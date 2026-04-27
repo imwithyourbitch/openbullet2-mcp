@@ -2,6 +2,18 @@ import { z } from 'zod';
 import { OB2Client } from '../client/ob2-client.js';
 import { LOLICODE_SYNTAX_REFERENCE, LOLICODE_QUICK_REFERENCE, CONFIG_CREATION_GUIDE } from '../lolicode-reference.js';
 
+/** Escape a user-supplied string so it is safe to embed inside a LoliCode "..." literal. */
+function escapeLoli(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+/** Validate a LoliCode identifier (variable / capture name). */
+function assertLoliIdentifier(name: string, label: string): void {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error(`Invalid ${label} '${name}': must match [A-Za-z_][A-Za-z0-9_]*`);
+  }
+}
+
 export function registerConfigTools(client: OB2Client) {
   const server = client.server;
 
@@ -294,30 +306,32 @@ The generated config:
       captureField: z.string().optional().describe('JSON field to capture on success (e.g., "subscription", "email"). Leave empty for no capture.'),
     },
   }, async (args) => {
+    if (args.captureField !== undefined) {
+      assertLoliIdentifier(args.captureField, 'captureField');
+    }
     const captureBlock = args.captureField ? `
 BLOCK:Parse
   input = @data.SOURCE
-  jToken = "$.${args.captureField}"
-  MODE:JSON
+  jToken = "$.${escapeLoli(args.captureField)}"
+  MODE:Json
   => CAP @${args.captureField}
 ENDBLOCK` : '';
 
     const loliCodeScript = `BLOCK:HttpRequest
-  url = "${args.loginUrl}"
+  url = "${escapeLoli(args.loginUrl)}"
   method = POST
-  type = STANDARD
-  customHeaders = {("Content-Type", "application/json")}
-  stringContent = $"{\\"email\\":\\"<input.USER>\\",\\"password\\":\\"<input.PASS>\\"}"
-  contentType = "application/json"
+  TYPE:STANDARD
+  $"{\\"email\\":\\"<input.USER>\\",\\"password\\":\\"<input.PASS>\\"}"
+  "application/json"
 ENDBLOCK${captureBlock}
 BLOCK:Keycheck
   KEYCHAIN SUCCESS OR
-    STRINGKEY @data.SOURCE Contains "${args.successIndicator}"
+    STRINGKEY @data.SOURCE Contains "${escapeLoli(args.successIndicator)}"
   KEYCHAIN FAIL OR
-    STRINGKEY @data.SOURCE Contains "${args.failureIndicator}"
-    INTKEY @data.STATUS Is 401
+    STRINGKEY @data.SOURCE Contains "${escapeLoli(args.failureIndicator)}"
+    INTKEY @data.RESPONSECODE EqualTo 401
   KEYCHAIN RETRY OR
-    INTKEY @data.STATUS Is 429
+    INTKEY @data.RESPONSECODE EqualTo 429
     STRINGKEY @data.SOURCE Contains "rate limit"
 ENDBLOCK`;
 
@@ -367,35 +381,41 @@ The generated config:
 - Keychecks for SUCCESS/FAIL`,
     inputSchema: {
       targetUrl: z.string().describe('URL to scrape (e.g., "https://books.toscrape.com/")'),
-      primaryField: z.enum(['title', 'price', 'description', 'link', 'image', 'custom']).describe('Field to capture'),
+      primaryField: z.string().describe('Capture name for the primary field (LoliCode identifier, e.g., "title", "price")'),
       cssSelector: z.string().describe('CSS selector (e.g., "h3 a" for titles, ".price_color" for prices, "img.thumbnail" for images)'),
-      attributeToExtract: z.string().optional().describe('Attribute to extract. "href" for links, "src" for images. Leave empty for text content.'),
-      secondField: z.string().optional().describe('Second field to capture (optional)'),
-      secondCssSelector: z.string().optional().describe('CSS selector for second field'),
+      attributeToExtract: z.string().optional().describe('Attribute to extract for the primary field. "href" for links, "src" for images. Leave empty for text content.'),
+      secondField: z.string().optional().describe('Capture name for an optional second field (LoliCode identifier)'),
+      secondCssSelector: z.string().optional().describe('CSS selector for the second field'),
+      secondAttributeToExtract: z.string().optional().describe('Attribute to extract for the second field. Leave empty for text content.'),
     },
   }, async (args) => {
-    const attrBlock = args.attributeToExtract ? `\n  attributeName = "${args.attributeToExtract}"` : '';
+    assertLoliIdentifier(args.primaryField, 'primaryField');
+    if (args.secondField !== undefined) {
+      assertLoliIdentifier(args.secondField, 'secondField');
+    }
+    const primaryAttr = args.attributeToExtract ? `\n  attributeName = "${escapeLoli(args.attributeToExtract)}"` : '';
+    const secondAttr = args.secondAttributeToExtract ? `\n  attributeName = "${escapeLoli(args.secondAttributeToExtract)}"` : '';
     const secondCaptureBlock = args.secondField && args.secondCssSelector ? `
 BLOCK:Parse
   input = @data.SOURCE
-  cssSelector = "${args.secondCssSelector}"${attrBlock}
+  cssSelector = "${escapeLoli(args.secondCssSelector)}"${secondAttr}
   MODE:CSS
   => CAP @${args.secondField}
 ENDBLOCK` : '';
 
     const loliCodeScript = `BLOCK:HttpRequest
-  url = "${args.targetUrl}"
+  url = "${escapeLoli(args.targetUrl)}"
   method = GET
 ENDBLOCK
 BLOCK:Parse
   input = @data.SOURCE
-  cssSelector = "${args.cssSelector}"${attrBlock}
+  cssSelector = "${escapeLoli(args.cssSelector)}"${primaryAttr}
   MODE:CSS
   => CAP @${args.primaryField}
 ENDBLOCK${secondCaptureBlock}
 BLOCK:Keycheck
   KEYCHAIN SUCCESS OR
-    STRINGKEY @data.SOURCE Contains "${args.primaryField}"
+    STRINGKEY @data.SOURCE Contains "${escapeLoli(args.primaryField)}"
   KEYCHAIN FAIL OR
     INTKEY @data.STATUS GreaterThan 399
 ENDBLOCK`;

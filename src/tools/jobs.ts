@@ -123,21 +123,30 @@ Proxy Sources (proxySources JSON):
 
 USE WHEN: Testing if proxies work and their response time.
 SIDE EFFECTS: Creates and starts a proxy check job.
-RETURNS: Job object with ID.`,
+RETURNS: Job object with ID.
+
+NOTE: 'targetUrl' and 'targetSuccessKey' are both required by OB2: the URL the
+proxy will fetch and a string that must appear in the response for the proxy to
+be considered working (e.g. "<title>" or a known phrase).`,
     inputSchema: {
       groupId: z.number().describe('Proxy group ID to check'),
       name: z.string().describe('Job name (e.g., "Proxy Test 1")'),
       bots: z.number().optional().describe('Parallel bots. Default: 10'),
       checkOnlyUntested: z.boolean().optional().describe('Only test new proxies. Default: true'),
-      target: z.string().optional().describe('URL to test against (e.g., "https://example.com")'),
+      targetUrl: z.string().describe('URL the proxy fetches when checking (e.g. "https://example.com")'),
+      targetSuccessKey: z.string().describe('String that must appear in the response body for the proxy to be marked working (e.g. "<title>")'),
       timeoutMilliseconds: z.number().optional().describe('Timeout per proxy. Default: 10000'),
     },
   }, async (args) => {
     const job = await client.post('/job/proxy-check', {
-      groupId: args.groupId, name: args.name, bots: args.bots ?? 10,
+      groupId: args.groupId,
+      name: args.name,
+      bots: args.bots ?? 10,
       checkOnlyUntested: args.checkOnlyUntested ?? true,
-      target: args.target || null, timeoutMilliseconds: args.timeoutMilliseconds ?? 10000,
-      startCondition: 'StartImmediately', checkOutput: undefined,
+      target: { url: args.targetUrl, successKey: args.targetSuccessKey },
+      timeoutMilliseconds: args.timeoutMilliseconds ?? 10000,
+      startCondition: { _polyTypeName: 'relativeTimeStartCondition', startAfter: '00:00:00' },
+      checkOutput: { _polyTypeName: 'databaseProxyCheckOutput' },
     });
     return { content: [{ type: 'text', text: `ProxyCheck job created:\n${JSON.stringify(job, null, 2)}` }] };
   });
@@ -147,27 +156,50 @@ RETURNS: Job object with ID.`,
 
 USE WHEN: Modifying job settings before starting (job must be idle).
 SIDE EFFECTS: Updates job in OB2. Job must not be running.
-RETURNS: Updated job object.`,
+RETURNS: Updated job object.
+
+NOTE: Only the fields you supply are changed. Every other setting is preserved
+by fetching the job's current options first and merging in your overrides, so
+calling this tool to change one value does not reset the rest of the job.`,
     inputSchema: {
       id: z.number().describe('Job ID to update'),
       configId: z.string().optional().describe('New Config ID to run'),
       name: z.string().optional().describe('New job name'),
       bots: z.number().optional().describe('New bot count'),
+      skip: z.number().optional().describe('New skip count'),
+      proxyMode: z.enum(['Default', 'On', 'Off', 'OnSuccess']).optional().describe('When to use proxies'),
+      shuffleProxies: z.boolean().optional().describe('Randomize proxy order'),
+      noValidProxyBehaviour: z.enum(['Reload', 'Abort', 'Continue']).optional().describe('No valid proxies action'),
+      proxyBanTimeSeconds: z.number().optional().describe('Proxy ban time in seconds'),
+      markAsToCheckOnAbort: z.boolean().optional().describe('Mark unprocessed data as ToCheck on abort'),
+      neverBanProxies: z.boolean().optional().describe('Never ban proxies'),
+      concurrentProxyMode: z.boolean().optional().describe('Allow multiple bots per proxy'),
+      periodicReloadIntervalSeconds: z.number().optional().describe('Periodic proxy reload interval'),
       dataPool: z.string().optional().describe('JSON data pool config'),
       proxySources: z.string().optional().describe('JSON proxy sources array'),
       hitOutputs: z.string().optional().describe('JSON hit outputs array'),
     },
   }, async (args) => {
-    const job = await client.put('/job/multi-run', {
-      id: args.id, configId: args.configId || '', name: args.name || '', bots: args.bots ?? 1,
-      skip: 0, proxyMode: 'Default', shuffleProxies: true, noValidProxyBehaviour: 'Reload',
-      proxyBanTimeSeconds: 0, markAsToCheckOnAbort: false, neverBanProxies: false,
-      concurrentProxyMode: false, periodicReloadIntervalSeconds: 0,
-      startCondition: { _polyTypeName: 'relativeTimeStartCondition', startAfter: '00:00:00' },
-      dataPool: args.dataPool ? JSON.parse(args.dataPool) : { _polyTypeName: 'infiniteDataPool' },
-      proxySources: args.proxySources ? JSON.parse(args.proxySources) : [],
-      hitOutputs: args.hitOutputs ? JSON.parse(args.hitOutputs) : [],
-    });
+    const current = await client.get<Record<string, unknown>>('/job/multi-run/options', { query: { id: args.id } });
+
+    const body: Record<string, unknown> = { ...current, id: args.id };
+    if (args.configId !== undefined) body.configId = args.configId;
+    if (args.name !== undefined) body.name = args.name;
+    if (args.bots !== undefined) body.bots = args.bots;
+    if (args.skip !== undefined) body.skip = args.skip;
+    if (args.proxyMode !== undefined) body.proxyMode = args.proxyMode;
+    if (args.shuffleProxies !== undefined) body.shuffleProxies = args.shuffleProxies;
+    if (args.noValidProxyBehaviour !== undefined) body.noValidProxyBehaviour = args.noValidProxyBehaviour;
+    if (args.proxyBanTimeSeconds !== undefined) body.proxyBanTimeSeconds = args.proxyBanTimeSeconds;
+    if (args.markAsToCheckOnAbort !== undefined) body.markAsToCheckOnAbort = args.markAsToCheckOnAbort;
+    if (args.neverBanProxies !== undefined) body.neverBanProxies = args.neverBanProxies;
+    if (args.concurrentProxyMode !== undefined) body.concurrentProxyMode = args.concurrentProxyMode;
+    if (args.periodicReloadIntervalSeconds !== undefined) body.periodicReloadIntervalSeconds = args.periodicReloadIntervalSeconds;
+    if (args.dataPool !== undefined) body.dataPool = JSON.parse(args.dataPool);
+    if (args.proxySources !== undefined) body.proxySources = JSON.parse(args.proxySources);
+    if (args.hitOutputs !== undefined) body.hitOutputs = JSON.parse(args.hitOutputs);
+
+    const job = await client.put('/job/multi-run', body);
     return { content: [{ type: 'text', text: `Job updated:\n${JSON.stringify(job, null, 2)}` }] };
   });
 

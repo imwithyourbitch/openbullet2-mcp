@@ -37,9 +37,9 @@ ENDBLOCK
 BLOCK:HttpRequest
   url = "https://example.com/api"
   method = GET (or POST/PUT/DELETE)
-  type = STANDARD
-  stringContent = $"{\"user\":\"<input.USER>\",\"pass\":\"<input.PASS>\"}"
-  contentType = "application/json"
+  TYPE:STANDARD
+  $"{\"user\":\"<input.USER>\",\"pass\":\"<input.PASS>\"}"
+  "application/json"
 ENDBLOCK
 
 ### Parsing Data:
